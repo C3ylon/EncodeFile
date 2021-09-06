@@ -3,17 +3,20 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <io.h>
-#include<time.h>
 
 #define READSIZE 102400
 
 unsigned char key[256];
 size_t encodelen;
 unsigned char* buff;
+int EncodeOp = 0;
+unsigned char sbuff[2][8];//
+unsigned char filehead[] = { 0xE8, 0xE9, 0x90, 0x90, 0x90, 0x90, 0xC3, 0xC3 };
 int EncodeFile(const char* dirpath, const char* filename)
 {
 	char filepath[MAX_PATH];
 	char temppath[MAX_PATH];
+
 	strcpy(filepath, dirpath);
 	strcat(filepath, "\\");
 	strcat(filepath, filename);
@@ -53,11 +56,117 @@ int EncodeFile(const char* dirpath, const char* filename)
 	return 1;
 }
 
+
+int EncodeAndDecodeFile(const char* dirpath, const char* filename)
+{
+	char filepath[MAX_PATH];
+	int flag = 0;
+	INT64 i = 0;
+	INT64 bufflen = 0;
+	INT64 szRead = 0;
+	//size_t szWrite = 0;
+	strcpy(filepath, dirpath);
+	strcat(filepath, "\\");
+	strcat(filepath, filename);
+	FILE* fp = fopen(filepath, "rb+");
+	if (fp)
+	{
+		if (EncodeOp)
+		{
+			fread(sbuff, 1, 8, fp);
+			if ((*(size_t*)sbuff != 0xC3C390909090E9E8))
+			{
+				_fseeki64(fp, 0, SEEK_SET);
+				while (szRead = fread(buff, 1, READSIZE, fp))
+				{
+					if ((bufflen = szRead - READSIZE + 8) > 0)
+					{
+						i = 0;
+						while (i < bufflen)
+						{
+							sbuff[!flag][i] = buff[READSIZE - 8 + i] ^ key[(READSIZE - 8 + i) % encodelen];
+							i++;
+						}
+						i = READSIZE - 1;
+						while (i > 7)
+						{
+							buff[i] = buff[i - 8] ^ key[(i - 8) % encodelen];
+							i--;
+						}
+						i = 0;
+						while (i < 8)
+						{
+							buff[i] = sbuff[flag][i];
+							i++;
+						}
+						flag = !flag;
+						_fseeki64(fp, -szRead, SEEK_CUR);
+						fwrite(buff, 1, READSIZE, fp);
+					}
+					else
+					{
+						i = szRead + 7;
+						while (i > 7)
+						{
+							buff[i] = buff[i - 8] ^ key[(i - 8) % encodelen];
+							i--;
+						}
+						i = 0;
+						while (i < 8)
+						{
+							buff[i] = sbuff[flag][i];
+							i++;
+						}
+						_fseeki64(fp, -szRead, SEEK_CUR);
+						fwrite(buff, 1, szRead + 8, fp);
+						break;
+					}
+				}
+				_fseeki64(fp, 0, SEEK_SET);
+				fwrite(filehead, 1, 8, fp);
+			}
+			fclose(fp);
+		}
+		else
+		{
+			fread(sbuff, 1, 8, fp);
+			if ((*(size_t*)sbuff == 0xC3C390909090E9E8))
+			{
+				char filepathback[MAX_PATH];
+				strcpy(filepathback, filepath);
+				strcat(filepath, ".tmp");
+		
+				FILE* tmp = fopen(filepath, "wb");
+				if (tmp)
+				{
+					while (szRead = fread(buff, 1, READSIZE, fp))
+					{
+						i = 0;
+						while (i < szRead)
+						{
+							buff[i] ^= key[i % encodelen];
+							i++;
+						}
+						fwrite(buff, 1, szRead, tmp);
+					}
+					fclose(tmp);
+				}
+				fclose(fp);
+				remove(filepathback);
+				rename(filepath, filepathback);
+				return 1;
+			}
+			fclose(fp);
+		}
+	}
+	return 1;
+}
+
 int ListFiles(const char* dir)
 {
 	char dirNew[MAX_PATH];
 	strcpy(dirNew, dir);
-	strcat(dirNew, "\\*.*");    // ÔÚÄ¿Â¼ºóÃæ¼ÓÉÏ"\\*.*"½øÐÐµÚÒ»´ÎËÑË÷
+	strcat(dirNew, "\\*.*");    // åœ¨ç›®å½•åŽé¢åŠ ä¸Š"\\*.*"è¿›è¡Œç¬¬ä¸€æ¬¡æœç´¢
 	__finddata64_t findData;
 	intptr_t handle = _findfirst64(dirNew, &findData);
 	if (handle == -1)
@@ -79,7 +188,7 @@ int ListFiles(const char* dir)
 			strcpy(dirNew, dir);
 			strcat(dirNew, "\\");
 			strcat(dirNew, findData.name);
-			// ÔÚÄ¿Â¼ºóÃæ¼ÓÉÏ"\\"ºÍËÑË÷µ½µÄÄ¿Â¼Ãû½øÐÐÏÂÒ»´ÎËÑË÷
+			// åœ¨ç›®å½•åŽé¢åŠ ä¸Š"\\"å’Œæœç´¢åˆ°çš„ç›®å½•åè¿›è¡Œä¸‹ä¸€æ¬¡æœç´¢
 
 
 			ListFiles(dirNew);
@@ -87,19 +196,18 @@ int ListFiles(const char* dir)
 		else
 		{
 			printf("%s\t%lld bytes\n", findData.name, findData.size);
-			EncodeFile(dir, findData.name);
+			//EncodeFile(dir, findData.name);
+			EncodeAndDecodeFile(dir, findData.name);
 		}
 	} while (_findnext64(handle, &findData) == 0);
 
-	_findclose(handle);    // ¹Ø±ÕËÑË÷¾ä±ú
+	_findclose(handle);    // å…³é—­æœç´¢å¥æŸ„
 	return 1;
 }
 
 int main(intptr_t argc, char** argv)
 {
-	time_t start, end;
-	start = time(NULL);
-	
+	scanf("%d", &EncodeOp);
 	scanf("%s", &key);
 	encodelen = strlen((const char*)key);
 	buff = (unsigned char*)malloc(READSIZE);
@@ -112,16 +220,16 @@ int main(intptr_t argc, char** argv)
 	}
 	else
 	{
-		char dir[] = "C:\\Users\\11042\\Desktop\\ÐÂ½¨ÎÄ¼þ¼Ð (2)";
+		char dir[] = "C:\\Users\\11042\\Desktop\\æ–°å»ºæ–‡ä»¶å¤¹ (2)";
 		ListFiles(dir);
 	}
 
 	//long long szRead;
 	//char buff[4096*40];
-	//FILE* fp = fopen("D:\\EVA\\[´óÌå»ý]Evangelion.3.0+1.01.Thrice.Upon.a.Time.2021.ÖÐÎÄ×ÖÄ».WEBrip.AAC.1080p.x264-VINEnc.mp4", "rb");
+	//FILE* fp = fopen("D:\\EVA\\[å¤§ä½“ç§¯]Evangelion.3.0+1.01.Thrice.Upon.a.Time.2021.ä¸­æ–‡å­—å¹•.WEBrip.AAC.1080p.x264-VINEnc.mp4", "rb");
 	//if (fp)
 	//{
-	//	FILE* fpp = fopen("C:\\Users\\11042\\Desktop\\ÐÂ½¨ÎÄ¼þ¼Ð (2)\\1323.mp4", "wb");
+	//	FILE* fpp = fopen("C:\\Users\\11042\\Desktop\\æ–°å»ºæ–‡ä»¶å¤¹ (2)\\1323.mp4", "wb");
 	//	if (fpp)
 	//	{
 	//		while (szRead = fread(buff, 1, 4096*40, fp))
@@ -133,11 +241,6 @@ int main(intptr_t argc, char** argv)
 	//	fclose(fp);
 	//}
 
-	end = time(NULL);
-
-	printf("time = %lfÃë\n", difftime(end, start));
-
-	system("pause");
 	return 0;
 }
 
