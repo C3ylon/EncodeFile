@@ -3,135 +3,102 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <io.h>
+
 //PathIsDirectory
 #include<Shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
 
-#define READSIZE 102400
-
+#define READSIZE 1048576
 unsigned char key[256];
-size_t encodelen;
+unsigned char shift[8];
+unsigned char reshift[8];
+size_t* payload = (size_t*)((INT32*)key + 1);
+
 unsigned char* buff;
 int EncodeOp = 0;
-unsigned char sbuff[2][8];//
-unsigned char filehead[] = { 0xE8, 0xE9, 0x90, 0x90, 0x90, 0x90, 0xC3, 0xC3 };
-int EncodeFile(const char* dirpath, const char* filename)
+unsigned char sbuff[8];//
+unsigned char filehead[] = { 0xE8, 0xE9, 0x90, 0x90, 0x90, 0x90, 0xC3, 0x00 };
+size_t temp = 0;
+
+
+int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 {
 	char filepath[MAX_PATH];
-	char temppath[MAX_PATH];
-
-	strcpy(filepath, dirpath);
-	strcat(filepath, "\\");
-	strcat(filepath, filename);
-	strcpy(temppath, filepath);
-	strcat(temppath, ".c3");
-
-	if (!rename(filepath, temppath))
-	{
-		FILE* fp = fopen(temppath, "rb");
-		if (fp)
-		{
-			FILE* fencode = fopen(filepath, "wb");
-			if (fencode)
-			{
-				size_t szRead = 0;
-				int count = 0;
-				while (szRead = fread(buff, 1, READSIZE, fp))
-				{
-					while (count < szRead)
-					{
-						buff[count] ^= key[count % encodelen];
-						count++;
-					}
-					count = 0;
-					fwrite(buff, 1, szRead, fencode);
-				}
-				fclose(fencode);
-			}
-
-			fclose(fp);
-		}
-		remove(temppath);
-	}
-	return 1;
-}
-
-
-int EncodeAndDecodeFile(const char* dirpath, const char* filename)
-{
-	char filepath[MAX_PATH];
+	char filepathback[MAX_PATH];
 	int flag = 0;
-	INT64 i = 0;
-	INT64 bufflen = 0;
-	INT64 szRead = 0;
-	//size_t szWrite = 0;
+	size_t i = 0;
+	int j = 0;
+	size_t bufflen = 0;
+	size_t szRead = 0;
+	size_t szFile = 0;
+	unsigned char align = 0;
+	size_t alignbuff = 0xFFFFFFFFFFFFFFFF;
+
 	strcpy(filepath, dirpath);
-	strcat(filepath, "\\");
-	strcat(filepath, filename);
+	if (isfolder)
+	{
+		strcat(filepath, "\\");
+		strcat(filepath, filename);
+	}
+
 	FILE* fp = fopen(filepath, "rb+");
 	if (fp)
 	{
 		if (EncodeOp)
 		{
 			fread(sbuff, 1, 8, fp);
-			if ((*(size_t*)sbuff != 0xC3C390909090E9E8))
+			if ((*(size_t*)sbuff & 0xFFFFFFFFFFFFFF) != 0xC390909090E9E8)
 			{
-				_fseeki64(fp, 0, SEEK_SET);
-				while (szRead = fread(buff, 1, READSIZE, fp))
+				_fseeki64(fp, 0, SEEK_END);
+				szFile = _ftelli64(fp);
+				align = szFile % 8;
+				if (align)
 				{
-					if ((bufflen = szRead - READSIZE + 8) > 0)
-					{
-						i = 0;
-						while (i < bufflen)
-						{
-							sbuff[!flag][i] = buff[READSIZE - 8 + i] ^ key[(READSIZE - 8 + i) % encodelen];
-							i++;
-						}
-						i = READSIZE - 1;
-						while (i > 7)
-						{
-							buff[i] = buff[i - 8] ^ key[(i - 8) % encodelen];
-							i--;
-						}
-						i = 0;
-						while (i < 8)
-						{
-							buff[i] = sbuff[flag][i];
-							i++;
-						}
-						flag = !flag;
-						_fseeki64(fp, -szRead, SEEK_CUR);
-						fwrite(buff, 1, READSIZE, fp);
-					}
-					else
-					{
-						i = szRead + 7;
-						while (i > 7)
-						{
-							buff[i] = buff[i - 8] ^ key[(i - 8) % encodelen];
-							i--;
-						}
-						i = 0;
-						while (i < 8)
-						{
-							buff[i] = sbuff[flag][i];
-							i++;
-						}
-						_fseeki64(fp, -szRead, SEEK_CUR);
-						fwrite(buff, 1, szRead + 8, fp);
-						break;
-					}
+					fwrite(&alignbuff, 1, 8 - align, fp);
+					filehead[7] ^= align;
 				}
 				_fseeki64(fp, 0, SEEK_SET);
-				fwrite(filehead, 1, 8, fp);
+				strcpy(filepathback, filepath);
+				strcat(filepath, ".tmp");
+
+				FILE* tmp = fopen(filepath, "wb");
+				if (tmp)
+				{
+					fwrite(filehead, 1, 8, tmp);
+					while (szRead = fread(buff, 1, READSIZE, fp))
+					{
+						i = 0;
+						szRead = szRead >> 3;
+						while (i < szRead)
+						{
+							temp = *((size_t*)buff + i);
+							j = 0;
+							while (j < 8)
+							{
+								temp = (temp << shift[j]) | (temp >> (64 - shift[j]));
+								temp ^= *payload;
+								j++;
+							}
+							*((size_t*)buff + i) = temp;
+							i++;
+						}
+						fwrite(buff, 8, szRead, tmp);
+					}
+					fclose(tmp);
+				}
+				fclose(fp);
+				remove(filepathback);
+				rename(filepath, filepathback);
+				return 1;
 			}
 			fclose(fp);
 		}
 		else
 		{
 			fread(sbuff, 1, 8, fp);
-			if ((*(size_t*)sbuff == 0xC3C390909090E9E8))
+			if ((*(size_t*)sbuff & 0xFFFFFFFFFFFFFF) == 0xC390909090E9E8)
 			{
+				align = *((unsigned char*)sbuff + 7) & 0xF;
 				char filepathback[MAX_PATH];
 				strcpy(filepathback, filepath);
 				strcat(filepath, ".tmp");
@@ -142,12 +109,21 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename)
 					while (szRead = fread(buff, 1, READSIZE, fp))
 					{
 						i = 0;
+						szRead = szRead >> 3;
 						while (i < szRead)
 						{
-							buff[i] ^= key[i % encodelen];
+							temp = *((size_t*)buff + i);
+							j = 0;
+							while (j < 8)
+							{
+								temp ^= *payload;
+								temp = (temp >> reshift[j]) | (temp << (64 - reshift[j]));
+								j++;
+							}
+							*((size_t*)buff + i) = temp;
 							i++;
 						}
-						fwrite(buff, 1, szRead, tmp);
+						fwrite(buff, 8, szRead, tmp);
 					}
 					fclose(tmp);
 				}
@@ -168,104 +144,7 @@ int ListFiles(const char* dir)
 	strcpy(dirNew, dir);
 	if (!PathIsDirectoryA(dir))
 	{
-		char filepath[MAX_PATH];
-		int flag = 0;
-		INT64 i = 0;
-		INT64 bufflen = 0;
-		INT64 szRead = 0;
-		//size_t szWrite = 0;
-		strcpy(filepath, dir);
-		FILE* fp = fopen(filepath, "rb+");
-		if (fp)
-		{
-			if (EncodeOp)
-			{
-				fread(sbuff, 1, 8, fp);
-				if ((*(size_t*)sbuff != 0xC3C390909090E9E8))
-				{
-					_fseeki64(fp, 0, SEEK_SET);
-					while (szRead = fread(buff, 1, READSIZE, fp))
-					{
-						if ((bufflen = szRead - READSIZE + 8) > 0)
-						{
-							i = 0;
-							while (i < bufflen)
-							{
-								sbuff[!flag][i] = buff[READSIZE - 8 + i] ^ key[(READSIZE - 8 + i) % encodelen];
-								i++;
-							}
-							i = READSIZE - 1;
-							while (i > 7)
-							{
-								buff[i] = buff[i - 8] ^ key[(i - 8) % encodelen];
-								i--;
-							}
-							i = 0;
-							while (i < 8)
-							{
-								buff[i] = sbuff[flag][i];
-								i++;
-							}
-							flag = !flag;
-							_fseeki64(fp, -szRead, SEEK_CUR);
-							fwrite(buff, 1, READSIZE, fp);
-						}
-						else
-						{
-							i = szRead + 7;
-							while (i > 7)
-							{
-								buff[i] = buff[i - 8] ^ key[(i - 8) % encodelen];
-								i--;
-							}
-							i = 0;
-							while (i < 8)
-							{
-								buff[i] = sbuff[flag][i];
-								i++;
-							}
-							_fseeki64(fp, -szRead, SEEK_CUR);
-							fwrite(buff, 1, szRead + 8, fp);
-							break;
-						}
-					}
-					_fseeki64(fp, 0, SEEK_SET);
-					fwrite(filehead, 1, 8, fp);
-				}
-				fclose(fp);
-			}
-			else
-			{
-				fread(sbuff, 1, 8, fp);
-				if ((*(size_t*)sbuff == 0xC3C390909090E9E8))
-				{
-					char filepathback[MAX_PATH];
-					strcpy(filepathback, filepath);
-					strcat(filepath, ".tmp");
-
-					FILE* tmp = fopen(filepath, "wb");
-					if (tmp)
-					{
-						while (szRead = fread(buff, 1, READSIZE, fp))
-						{
-							i = 0;
-							while (i < szRead)
-							{
-								buff[i] ^= key[i % encodelen];
-								i++;
-							}
-							fwrite(buff, 1, szRead, tmp);
-						}
-						fclose(tmp);
-					}
-					fclose(fp);
-					remove(filepathback);
-					rename(filepath, filepathback);
-					return 1;
-				}
-				fclose(fp);
-			}
-		}
+		EncodeAndDecodeFile(dir, "", FALSE);
 	}
 	else
 	{
@@ -300,7 +179,7 @@ int ListFiles(const char* dir)
 			{
 				printf("%s\t%lld bytes\n", findData.name, findData.size);
 				//EncodeFile(dir, findData.name);
-				EncodeAndDecodeFile(dir, findData.name);
+				EncodeAndDecodeFile(dir, findData.name, TRUE);
 			}
 		} while (_findnext64(handle, &findData) == 0);
 
@@ -313,21 +192,29 @@ int main(intptr_t argc, char** argv)
 {
 	scanf("%d", &EncodeOp);
 	scanf("%s", &key);
-	encodelen = strlen((const char*)key);
-	buff = (unsigned char*)malloc(READSIZE);
-	printf("begin\n");
 
+	int i = 0;
+	while (i < 4)
+	{
+		reshift[7 - 2 * i] = shift[2 * i] = key[i] >> 4;
+		reshift[6 - 2 * i] = shift[2 * i + 1] = key[i] & 0xF;
+		i++;
+	}
+
+	buff = (unsigned char*)malloc(READSIZE);
 	if (argv[1])
 	{
+		printf("begin\n");
 		printf("%s\n", argv[1]);
 		ListFiles(argv[1]);
 	}
 	else
 	{
-		char dir[] = "C:\\Users\\11042\\Desktop\\新建文件夹 (2)";
+		char dir[MAX_PATH];
+		scanf("%s", &dir);
+		printf("begin\n");
 		ListFiles(dir);
 	}
-
 	return 0;
 }
 
