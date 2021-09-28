@@ -6,7 +6,8 @@
 
 //PathIsDirectory
 #include<Shlwapi.h>
-#pragma comment(lib, "shlwapi.lib")
+//if compile in vs2019, add next line:
+//#pragma comment(lib, "shlwapi.lib")
 
 #define READSIZE 1048576
 unsigned char key[256];
@@ -148,8 +149,8 @@ int ListFiles(const char* dir)
 	}
 	else
 	{
-		strcat(dirNew, "\\*.*");    // 在目录后面加上"\\*.*"进行第一次搜索
-		__finddata64_t findData;
+		strcat(dirNew, "\\*.*");
+		struct __finddata64_t findData;
 		intptr_t handle = _findfirst64(dirNew, &findData);
 		if (handle == -1)
 		{
@@ -170,9 +171,6 @@ int ListFiles(const char* dir)
 				strcpy(dirNew, dir);
 				strcat(dirNew, "\\");
 				strcat(dirNew, findData.name);
-				// 在目录后面加上"\\"和搜索到的目录名进行下一次搜索
-
-
 				ListFiles(dirNew);
 			}
 			else
@@ -183,7 +181,7 @@ int ListFiles(const char* dir)
 			}
 		} while (_findnext64(handle, &findData) == 0);
 
-		_findclose(handle);    // 关闭搜索句柄
+		_findclose(handle);
 	}
 	return 1;
 }
