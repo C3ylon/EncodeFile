@@ -38,7 +38,7 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 		strcat(filepath, filename);
 	}
 
-	FILE* fp = fopen(filepath, "rb+");
+	FILE* fp = fopen(filepath, "rb");
 	if (fp)
 	{
 		if (if_encode)
@@ -120,13 +120,22 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 							i++;
 						}
 						szRead = szRead << 3;
-						if(feof(fp) && align)
+						if(!feof(fp))
 						{
-							fwrite(buff, 1, szRead - 8 + align, tmp);
+							fwrite(buff, 1, szRead, tmp);	
 						}
 						else
 						{
-							fwrite(buff, 1, szRead, tmp);
+							if(align)
+							{
+								fwrite(buff, 1, szRead - 8 + align, tmp);
+								break;
+							}
+							else
+							{
+								fwrite(buff, 1, szRead, tmp);
+								break;
+							}
 						}
 					}
 					fclose(tmp);
