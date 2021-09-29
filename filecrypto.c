@@ -120,9 +120,9 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 							i++;
 						}
 						szRead = szRead << 3;
-						if(align)
+						if(feof(fp) && align)
 						{
-							fwrite(buff, 1, align, tmp);
+							fwrite(buff, 1, szRead - 8 + align, tmp);
 						}
 						else
 						{
