@@ -226,5 +226,6 @@ int main(int argc, char** argv)
 		printf("[*]BEGIN\n");
 		ListFiles(dir);
 	}
+	system("pause");
 	return 0;
 }
