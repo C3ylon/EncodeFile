@@ -80,7 +80,7 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 							*((size_t*)buff + i) = transbuff;
 							i++;
 						}
-						int res = fwrite(buff, 8, szRead, tmp);
+						fwrite(buff, 8, szRead, tmp);
 					}
 					fclose(tmp);
 				}
@@ -202,7 +202,7 @@ int ListFiles(const char* dir)
 int main(int argc, char** argv)
 {
 	scanf("%d", &if_encode);
-	scanf("%s", &key);
+	scanf("%s", key);
 
 	int i = 0;
 	while (i < 4)
@@ -222,7 +222,7 @@ int main(int argc, char** argv)
 	else
 	{
 		char dir[MAX_PATH];
-		scanf("%s", &dir);
+		scanf("%s", dir);
 		printf("[*]BEGIN\n");
 		ListFiles(dir);
 	}
