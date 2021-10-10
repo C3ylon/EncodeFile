@@ -8,10 +8,10 @@
 //if compile in vs2019, add next line:
 //#pragma comment(lib, "shlwapi.lib")
 
-#define READSIZE 1048576
+#define READSIZE 1048576 //1024 * 1024
 
 unsigned char key[256];
-size_t* payload = (size_t*)((INT32*)key + 1);
+size_t* payload = (size_t*)((UINT32*)key + 1);
 unsigned char shift[8];
 unsigned char reshift[8];
 unsigned char* buff;
@@ -97,8 +97,8 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 			if ((*(size_t*)buff & 0xFFFFFFFFFFFFFF) == 0xC390909090E9E8)
 			{
 				_fseeki64(fp, 0, SEEK_END);
-				chunks = (_ftelli64(fp) - 8) / 1048576;
-				if((_ftelli64(fp) - 8) % 1048576)
+				chunks = (_ftelli64(fp) - 8) / READSIZE;
+				if((_ftelli64(fp) - 8) % READSIZE)
 					chunks++;
 				_fseeki64(fp, 8, SEEK_SET);
 				align = *((unsigned char*)buff + 7) & 0xF;
@@ -226,6 +226,5 @@ int main(int argc, char** argv)
 		printf("[*]BEGIN\n");
 		ListFiles(dir);
 	}
-	system("pause");
 	return 0;
 }
