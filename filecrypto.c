@@ -1,3 +1,5 @@
+//[!] Abandoned cz now has been cracked
+
 //#define _CRT_SECURE_NO_WARNINGS
 //gcc .\filecrypto.c -o filecrypto -O3 -lshlwapi
 #include <Windows.h>
